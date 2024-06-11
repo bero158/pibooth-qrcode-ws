@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "pibooth-qrcode-ws",
+			"path": "."
+		}
+	],
+	"settings": {}
+}

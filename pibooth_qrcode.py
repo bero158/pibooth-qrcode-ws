@@ -19,6 +19,15 @@ LOCATIONS = ['topleft', 'topright',
              'bottomleft', 'bottomright',
              'midtop-left', 'midtop-right',
              'midbottom-left', 'midbottom-right']
+TEXT_POSITIONS = ['left-right', 'top-bottom']
+
+
+def dequote(text):
+    # solve pibooth issue with quotes in cfg
+    if (len(text)>1):
+        if (text[0] == '"' and text[-1] == '"'):
+            text = text[1:][:-1]
+    return text
 
 
 @pibooth.hookimpl
@@ -44,9 +53,13 @@ def pibooth_configure(cfg):
                    "Location on 'print' state: {}".format(', '.join(LOCATIONS)),
                    "Location on print screen", LOCATIONS)
     cfg.add_option(SECTION, 'size', "7",
-                   "Size of QR code", "Pixel Size", "4")
+                   "Size of QR code", "Pixel Size", "7")
     cfg.add_option(SECTION, 'border_size', "4",
                    "Size of QR code", "Border Size", "4")
+    cfg.add_option(SECTION, 'text_position', "left-right",
+                   "Position of text: {}".format(', '.join(TEXT_POSITIONS)),
+                   "Position regarding to QR code", TEXT_POSITIONS)
+ 
 
 def get_qrcode_rect(win_rect, qrcode_image, location, offset):
     sublocation = ''
@@ -70,22 +83,51 @@ def get_qrcode_rect(win_rect, qrcode_image, location, offset):
     return qr_rect
 
 
-def get_text_rect(win_rect, qrcode_rect, location, margin=10):
+def get_text_rect(win_rect, qrcode_rect, location, margin=10 , text_position='left-right'):
     text_rect = pygame.Rect(0, 0, win_rect.width // 6, qrcode_rect.height)
     sublocation = ''
+    text_bottom = False
     if '-' in location:
         location, sublocation = location.split('-')
-    text_rect.top = qrcode_rect.top
-    if 'left' in location:
-        text_rect.left = qrcode_rect.right + margin
-    else:
-        text_rect.right = qrcode_rect.left - margin
-    if 'mid' in location:
-        if 'left' in sublocation:
-            text_rect.right = qrcode_rect.left - margin
-        else:
+    if text_position == 'left-right':
+        text_rect.top = qrcode_rect.top
+        if 'left' in location:
             text_rect.left = qrcode_rect.right + margin
-    return text_rect
+        else:
+            text_rect.right = qrcode_rect.left - margin
+        if 'mid' in location:
+            if 'left' in sublocation:
+                text_rect.right = qrcode_rect.left - margin
+            else:
+                text_rect.left = qrcode_rect.right + margin
+    else:
+        text_rect.left = qrcode_rect.left
+        if 'top' in location:
+            text_rect.top = qrcode_rect.bottom
+            text_bottom = True
+        else:
+            text_rect.bottom = qrcode_rect.top
+    return text_rect, text_bottom
+
+
+def place_text(cfg, win_rect, qrcode_rect, location, win):
+    side_text = dequote(cfg.get(SECTION, 'side_text'))
+    if side_text:
+        text_position = cfg.get(SECTION, 'text_position')
+        text_rect, text_bottom = get_text_rect(win_rect, qrcode_rect, location, text_position=text_position)
+        texts = multiline_text_to_surfaces(side_text,
+                                           cfg.gettyped('WINDOW', 'text_color'),
+                                           text_rect, 'bottom-left'
+                                           )
+        last_top = qrcode_rect.bottom
+        for text, rect in texts:
+            if text_bottom:
+                rect.top = last_top
+            win.surface.blit(text, rect)
+            last_top = rect.bottom
+        return texts
+    
+
 
 
 @pibooth.hookimpl
@@ -97,6 +139,9 @@ def pibooth_startup(cfg):
         if cfg.get(SECTION, '{}_location'.format(state)) not in LOCATIONS:
             raise ValueError("Unknown QR code location on '{}' state '{}'".format(
                              state, cfg.get(SECTION, '{}_location'.format(state))))
+        
+    if cfg.get(SECTION, 'text_position') not in TEXT_POSITIONS:
+            raise ValueError("Unknown text position '{}'".format(cfg.get(SECTION, 'text_position')))
 
 
 @pibooth.hookimpl
@@ -104,19 +149,15 @@ def state_wait_enter(cfg, app, win):
     """
     Display the QR Code on the wait view.
     """
-    win_rect = win.get_rect()
-    location = cfg.get(SECTION, 'wait_location')
     if hasattr(app, 'previous_qr') and app.previous_picture:
+        win_rect = win.get_rect()
         offset = cfg.gettuple(SECTION, 'offset', int, 2)
-        app.qr_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
-        win.surface.blit(app.previous_qr, app.qr_rect.topleft)
-        if cfg.get(SECTION, 'side_text'):
-            text_rect = get_text_rect(win_rect, app.qr_rect, location)
-            app.qr_texts = multiline_text_to_surfaces(cfg.get(SECTION, 'side_text'),
-                                                      cfg.gettyped('WINDOW', 'text_color'),
-                                                      text_rect, 'bottom-left')
-            for text, rect in app.qr_texts:
-                win.surface.blit(text, rect)
+        location = cfg.get(SECTION, 'wait_location')
+        qrcode_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
+        win.surface.blit(app.previous_qr, qrcode_rect)
+        texts = place_text(cfg, win_rect, qrcode_rect, location, win)
+        app.qr_texts = texts
+        app.qr_rect = qrcode_rect
 
 
 @pibooth.hookimpl
@@ -167,12 +208,7 @@ def state_print_enter(cfg, app, win):
     offset = cfg.gettuple(SECTION, 'offset', int, 2)
     location = cfg.get(SECTION, 'print_location')
     qrcode_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
-    if cfg.get(SECTION, 'side_text'):
-        text_rect = get_text_rect(win_rect, qrcode_rect, location)
-        texts = multiline_text_to_surfaces(cfg.get(SECTION, 'side_text'),
-                                           cfg.gettyped('WINDOW', 'text_color'),
-                                           text_rect, 'bottom-left')
-        for text, rect in texts:
-            win.surface.blit(text, rect)
-
+    
+    place_text(cfg, win_rect, qrcode_rect, location, win)
+    
     win.surface.blit(app.previous_qr, qrcode_rect.topleft)
