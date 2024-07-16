@@ -3,7 +3,7 @@
 pibooth-qrcode
 ==============
 
-|PythonVersions| |PypiPackage| |Downloads|
+|PythonVersions| |PypiPackage|
 
 ``pibooth-qrcode`` is a plugin for the `pibooth`_ application.
 
