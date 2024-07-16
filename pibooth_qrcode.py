@@ -166,6 +166,10 @@ def state_wait_do(app, win):
     Redraw the QR Code because it may have been erased by a screen update (
     for instance, if a print is done).
     """
+    if hasattr(app,"plugin_gallery"):
+            if app.plugin_gallery["active"]: #gallery is active. Don't show logo
+                return
+
     if hasattr(app, 'previous_qr') and app.previous_picture:
         # Not displayed if no previous capture is deleted
         win.surface.blit(app.previous_qr, app.qr_rect.topleft)
