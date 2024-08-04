@@ -167,7 +167,8 @@ def state_wait_do(app, win):
     for instance, if a print is done).
     """
     if hasattr(app,"plugin_gallery"):
-            if app.plugin_gallery["active"]: #gallery is active. Don't show logo
+            if app.plugin_gallery["active"]: 
+                #gallery is active. Don't show th QR code
                 return
 
     if hasattr(app, 'previous_qr') and app.previous_picture:
