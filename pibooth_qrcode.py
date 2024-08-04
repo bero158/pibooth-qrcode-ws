@@ -166,6 +166,7 @@ def state_wait_do(app, win):
     Redraw the QR Code because it may have been erased by a screen update (
     for instance, if a print is done).
     """
+    
     if hasattr(app,"plugin_gallery"):
             if app.plugin_gallery["active"]: 
                 #gallery is active. Don't show th QR code
