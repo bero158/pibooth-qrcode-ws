@@ -10,6 +10,8 @@ except ImportError:
 import pygame
 import pibooth
 from pibooth.view.background import multiline_text_to_surfaces
+from pibooth.utils import LOGGER
+import signal
 
 __version__ = "1.0.2"
 
@@ -128,13 +130,18 @@ def place_text(cfg, win_rect, qrcode_rect, location, win):
         return texts
     
 
-
+def handler(signum, frame):
+    LOGGER.debug("SIGHUP")
+    pass
 
 @pibooth.hookimpl
 def pibooth_startup(cfg):
+    signal.signal(signal.SIGHUP, handler )
     """
     Check the coherence of options.
     """
+    LOGGER.info(f"pibooth-qrcode - Hello from {SECTION}")
+
     for state in ('wait', 'print'):
         if cfg.get(SECTION, '{}_location'.format(state)) not in LOCATIONS:
             raise ValueError("Unknown QR code location on '{}' state '{}'".format(
@@ -218,3 +225,11 @@ def state_print_enter(cfg, app, win):
     place_text(cfg, win_rect, qrcode_rect, location, win)
     
     win.surface.blit(app.previous_qr, qrcode_rect.topleft)
+
+@pibooth.hookimpl
+def pibooth_cleanup(app):
+    """Actions performed at the cleanup of pibooth.
+
+    :param app: application instance
+    """
+    LOGGER.debug("CLEANUP!!!!")
