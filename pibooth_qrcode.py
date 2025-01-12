@@ -24,7 +24,7 @@ LOCATIONS = ['topleft', 'topright',
 TEXT_POSITIONS = ['left-right', 'top-bottom']
 
 
-def dequote(text):
+def dequote(text : str) -> str:
     # solve pibooth issue with quotes in cfg
     if (len(text)>1):
         if (text[0] == '"' and text[-1] == '"'):
@@ -63,7 +63,7 @@ def pibooth_configure(cfg):
                    "Position regarding to QR code", TEXT_POSITIONS)
  
 
-def get_qrcode_rect(win_rect, qrcode_image, location, offset):
+def get_qrcode_rect(win_rect : pygame.rect, qrcode_image : pygame.surface, location : str, offset : tuple[int,int]) -> pygame.rect:
     sublocation = ''
     if '-' in location:
         location, sublocation = location.split('-')
@@ -85,8 +85,7 @@ def get_qrcode_rect(win_rect, qrcode_image, location, offset):
     return qr_rect
 
 
-def get_text_rect(win_rect, qrcode_rect, location, margin=10 , text_position='left-right'):
-    text_rect = pygame.Rect(0, 0, win_rect.width // 6, qrcode_rect.height)
+def get_text_rect(text_rect : pygame.rect, qrcode_rect : pygame.rect, location : str, margin : int=10 , text_position : str='left-right') -> tuple[pygame.rect,bool]:
     sublocation = ''
     text_bottom = False
     if '-' in location:
@@ -112,27 +111,39 @@ def get_text_rect(win_rect, qrcode_rect, location, margin=10 , text_position='le
     return text_rect, text_bottom
 
 
-def place_text(cfg, win_rect, qrcode_rect, location, win):
-    side_text = dequote(cfg.get(SECTION, 'side_text'))
+def showText(win, texts, qrcode_rect : pygame.rect, text_bottom : bool):
+    last_top = qrcode_rect.bottom
+    for text, rect in texts:
+        if text_bottom:
+            rect.top = last_top
+        win.surface.blit(text, rect)
+        last_top = rect.bottom
+
+def place_text(win_rect : pygame.rect, qrcode_rect : pygame.rect, location : str, win, textColor : str, side_text : str, text_position : str) -> tuple[list[pygame.Surface],bool]:
+    text_rect : pygame.rect = None
+    text_bottom : bool = None
+    texts : list[pygame.Surface] = None
     if side_text:
-        text_position = cfg.get(SECTION, 'text_position')
-        text_rect, text_bottom = get_text_rect(win_rect, qrcode_rect, location, text_position=text_position)
+        text_rect = pygame.Rect(0, 0, win_rect.width // 6, qrcode_rect.height)
+        text_rect, text_bottom = get_text_rect(text_rect, qrcode_rect, location, text_position=text_position)
         texts = multiline_text_to_surfaces(side_text,
-                                           cfg.gettyped('WINDOW', 'text_color'),
-                                           text_rect, 'bottom-left'
+                                           textColor,
+                                           text_rect, 
+                                           'bottom-left'
                                            )
-        last_top = qrcode_rect.bottom
-        for text, rect in texts:
-            if text_bottom:
-                rect.top = last_top
-            win.surface.blit(text, rect)
-            last_top = rect.bottom
-        return texts
+        showText(win, texts, qrcode_rect, text_bottom)
+    return texts, text_bottom
     
 
 def handler(signum, frame):
     LOGGER.debug("SIGHUP")
     pass
+
+def showQR(app, win):
+    if hasattr(app, 'previous_qr') and app.previous_qr:
+        win.surface.blit(app.previous_qr, app.qrcode_rect)
+        if hasattr(app, 'qrcode_text') and app.qrcode_text:
+            showText(win, app.qrcode_text, app.qrcode_rect, app.qrcode_text_bottom)
 
 @pibooth.hookimpl
 def pibooth_startup(cfg):
@@ -160,13 +171,18 @@ def state_wait_enter(cfg, app, win):
         win_rect = win.get_rect()
         offset = cfg.gettuple(SECTION, 'offset', int, 2)
         location = cfg.get(SECTION, 'wait_location')
-        qrcode_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
-        win.surface.blit(app.previous_qr, qrcode_rect)
-        texts = place_text(cfg, win_rect, qrcode_rect, location, win)
-        app.qr_texts = texts
-        app.qr_rect = qrcode_rect
+        app.qrcode_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
+        app.qrcode_text,app.qrcode_text_bottom = place_text(win_rect,
+                                     app.qrcode_rect,
+                                     location,
+                                     win,
+                                     cfg.gettyped('WINDOW', 'text_color'),
+                                     side_text = dequote(cfg.get(SECTION, 'side_text')),
+                                     text_position = cfg.get(SECTION, 'text_position')
+                                     )
+        showQR(app, win)
 
-
+    
 @pibooth.hookimpl
 def state_wait_do(app, win):
     """
@@ -175,17 +191,11 @@ def state_wait_do(app, win):
     """
     
     if hasattr(app,"plugin_gallery"):
-            if app.plugin_gallery["active"]: 
-                #gallery is active. Don't show th QR code
-                return
-
-    if hasattr(app, 'previous_qr') and app.previous_picture:
-        # Not displayed if no previous capture is deleted
-        win.surface.blit(app.previous_qr, app.qr_rect.topleft)
-        if hasattr(app, 'qr_texts'):
-            for text, rect in app.qr_texts:
-                win.surface.blit(text, rect)
-
+        if app.plugin_gallery["active"]: 
+            #gallery is active. Don't show th QR code
+            return
+    showQR(app, win)
+        
 
 @pibooth.hookimpl(trylast=True)
 def state_processing_exit(cfg, app):
@@ -220,9 +230,16 @@ def state_print_enter(cfg, app, win):
     win_rect = win.get_rect()
     offset = cfg.gettuple(SECTION, 'offset', int, 2)
     location = cfg.get(SECTION, 'print_location')
-    qrcode_rect = get_qrcode_rect(win_rect, app.previous_qr, location, offset)
+    qrcode_rect = get_qrcode_rect(win_rect , app.previous_qr, location, offset)
     
-    place_text(cfg, win_rect, qrcode_rect, location, win)
+    place_text(win_rect,
+               qrcode_rect,
+               location,
+               win,
+               cfg.gettyped('WINDOW', 'text_color'),
+               side_text = dequote(cfg.get(SECTION, 'side_text')),
+               text_position = cfg.get(SECTION, 'text_position')
+               )
     
     win.surface.blit(app.previous_qr, qrcode_rect.topleft)
 
